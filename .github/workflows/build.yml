@@ -1,0 +1,46 @@
+name: build crx
+
+on:
+  watch:
+    types: [started]
+  push:
+    branches:
+      - master
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.event.repository.owner.id == github.event.sender.id
+    steps:
+      - uses: actions/checkout@master
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: npm install, build
+        env:
+          PRIVATE_KEY: ${{ secrets.buildPem }}
+        run: |
+          npm install -g crx3
+          cat <<< $PRIVATE_KEY > ~/build.pem
+          (cd py;python3 build.py -chromium-stable;)
+          mv chrom*.zip ~/build.zip
+          (mkdir ~/pack_src;cd ~/pack_src;unzip ~/build.zip)
+          mkdir dist||true;
+          cd dist;
+          sed '2 i    "update_url": "https://raw.githubusercontent.com/tofuliang/YouTube-Extension/build/dist/update.xml",' ~/pack_src/manifest.json|jq > manifest.json
+          mv manifest.json ~/pack_src/manifest.json
+          rm -fr ~/pack_src/node_modules||true;
+          npx crx3 -p ~/build.pem -o ImproveYouTube.crx -x update.xml --crxURL https://raw.githubusercontent.com/tofuliang/YouTube-Extension/build/dist/ImproveYouTube.crx ~/pack_src
+      - name: Set git identity
+        run: |
+          git config --global user.email "tofuliang@gmail.com"
+          git config --global user.name "tofuliang"
+          git add dist
+          git commit -m "update crx"
+          git push
+      - name: 失败调试
+        uses: P3TERX/ssh2actions@main
+        if: ${{ failure() }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
